@@ -1,360 +1,314 @@
-﻿// *** NHỮNG DÒNG NÀY CỰC KỲ QUAN TRỌNG! ***
-#include "Item.h"   // Phải include file .h của chính nó
-#include "Player.h" // Phải include file Player.h để biết các hàm của Player
+﻿#include "Item.h"
+#include "Player.h" 
+#include <iostream> 
+#include <cmath> // Cần cho std::sqrt
 
-Item::Item()
-{
-    // Hàm khởi tạo, để trống
-}
+Item::Item() {}
 
-// Hàm tiện ích (Từ file gốc) - Tính vector đơn vị
 sf::Vector2f Item::normalize(const sf::Vector2f& source) {
     float length = std::sqrt((source.x * source.x) + (source.y * source.y));
-    if (length != 0) {
-        return sf::Vector2f(source.x / length, source.y / length);
-    }
-    else {
-        return source;
-    }
+    if (length != 0) { return sf::Vector2f(source.x / length, source.y / length); }
+    else { return source; }
 }
 
-// Tải tất cả hình ảnh và âm thanh của item
 void Item::loadAssets()
 {
-    // --- Tải Textures (Hình ảnh) ---
-    if (!mCoinTexture.loadFromFile("Assets/coin.png")) { /* Van chay */ }
-    if (!mMysteryBoxTexture.loadFromFile("Assets/mystery_box.png")) { /* Van chay */ }
-    if (!mMushroomTexture.loadFromFile("Assets/mushroom.png")) { /* Van chay */ }
-    if (!mFireFlowerTexture.loadFromFile("Assets/fire_flower.png")) { /* Van chay */ }
-
-    // --- TẢI ÂM THANH (Đã giảm âm lượng) ---
-    if (!mCoinBuffer.loadFromFile("Assets/coin.wav"))
-    {
-        std::cerr << "Loi tai Assets/coin.wav" << std::endl;
-    }
-    mCoinSound.setBuffer(mCoinBuffer);
-    mCoinSound.setVolume(50.f); // <-- ĐÃ GIẢM ÂM LƯỢNG XU
-
-    if (!mPowerupBuffer.loadFromFile("Assets/powerup.wav"))
-    {
-        std::cerr << "Loi tai Assets/powerup.wav" << std::endl;
-    }
-    mPowerupSound.setBuffer(mPowerupBuffer);
-    mPowerupSound.setVolume(50.f); // <-- ĐÃ GIẢM ÂM LƯỢNG NẤM
-
-    if (!mDamageBuffer.loadFromFile("Assets/damage.wav"))
-    {
-        std::cerr << "Loi tai Assets/damage.wav" << std::endl;
-    }
+    if (!mCoinTexture.loadFromFile("Assets/coin.png")) { /* Xử lý lỗi */ }
+    if (!mMysteryBoxTexture.loadFromFile("Assets/mystery_box.png")) { /* Xử lý lỗi */ }
+    if (!mMushroomTexture.loadFromFile("Assets/mushroom.png")) { /* Xử lý lỗi */ }
+    if (!mFireFlowerTexture.loadFromFile("Assets/fire_flower.png")) { /* Xử lý lỗi */ }
+    if (!mCoinBuffer.loadFromFile("Assets/coin.wav")) { /* Xử lý lỗi */ }
+    mCoinSound.setBuffer(mCoinBuffer); mCoinSound.setVolume(50.f);
+    if (!mPowerupBuffer.loadFromFile("Assets/powerup.wav")) { /* Xử lý lỗi */ }
+    mPowerupSound.setBuffer(mPowerupBuffer); mPowerupSound.setVolume(50.f);
+    if (!mDamageBuffer.loadFromFile("Assets/damage.wav")) { /* Xử lý lỗi */ }
     mDamageSound.setBuffer(mDamageBuffer);
-    // (Âm lượng damage giữ nguyên 100%)
 }
 
-// Reset và sinh ra các item
-void Item::reset(const std::vector<sf::RectangleShape>& platforms)
+// Hàm Reset: Đọc config và gọi các hàm spawn
+void Item::reset(int level, const std::vector<sf::RectangleShape>& platforms, sf::FloatRect flagBounds)
 {
-    // --- LOGIC TỪ resetGame() CŨ ---
-    // Xóa hết item của màn chơi trước
-    mCoins.clear();
-    mMysteryBoxes.clear();
-    mActiveRewards.clear();
-    mGroundFireFlowers.clear();
+    mCoins.clear(); mMysteryBoxes.clear(); mActiveRewards.clear(); mGroundFireFlowers.clear();
 
-    if (platforms.empty()) return; // Bảo vệ: Nếu chưa có platform thì không sinh
+    if (platforms.empty()) return;
 
-    // Gọi các hàm helper để sinh item
-    spawnCoins(platforms);
-    spawnBoxes(platforms);
-    spawnFireFlowers(platforms, platforms[0]); // platforms[0] luôn là mặt đất
+    std::string configFile = "Assets/level" + std::to_string(level) + "_config.txt";
+    std::ifstream file(configFile);
+
+    int numCoins = 25, numBoxes = 7, numFlowers = 15; // Giá trị mặc định
+
+    if (file.is_open()) {
+        std::string type; int count;
+        while (file >> type >> count) {
+            if (type == "COINS") { numCoins = count; }
+            else if (type == "BOXES") { numBoxes = count; }
+            else if (type == "FLOWERS") { numFlowers = count; }
+        }
+        file.close();
+    }
+    else {
+        std::cerr << "Warning: Config file not found: " << configFile << ". Using defaults." << std::endl;
+    }
+
+    // Gọi các hàm spawn với vị trí cờ (flagBounds) được truyền vào
+    spawnCoins(numCoins, platforms, flagBounds);
+    spawnBoxes(numBoxes, platforms, flagBounds);
+    spawnFireFlowers(numFlowers, platforms, platforms[0], flagBounds);
 }
 
-// Cập nhật logic item mỗi frame
 void Item::update(float deltaTime, Player& player)
 {
-    // Cập nhật các item đang bay (nấm, xu từ hộp)
     updateActiveRewards(deltaTime, player);
-
-    // Kiểm tra va chạm giữa player và tất cả item
     checkCollisions(player);
 }
 
-// Vẽ tất cả item ra màn hình
 void Item::render(sf::RenderTarget& target)
 {
-    // --- LOGIC VẼ TỪ renderGame() CŨ ---
-    // Vẽ theo thứ tự (để đảm bảo không bị che khuất sai)
     for (const auto& box : mMysteryBoxes) { target.draw(box.sprite); }
     for (const auto& coin : mCoins) { target.draw(coin); }
     for (const auto& reward : mActiveRewards) { target.draw(reward.sprite); }
     for (const auto& flower : mGroundFireFlowers) { target.draw(flower); }
 }
 
-// === CÁC HÀM PRIVATE (HELPER) ===
-
-// Cập nhật các item (nấm, xu) đang bay về phía người chơi
 void Item::updateActiveRewards(float deltaTime, Player& player)
 {
-    // --- CẬP NHẬT PHẦN THƯỞNG (BAY VÀO NGƯỜI) --- (Từ updatePlaying())
-    sf::Vector2f playerCenter = player.getCenter(); // Lấy vị trí trung tâm player
+    // Logic Homing (Item bay về phía Mario)
+    sf::Vector2f playerCenter = player.getCenter();
     for (auto& reward : mActiveRewards) {
-        if (reward.homing) { // Nếu item này được set là 'homing'
-            sf::Vector2f direction = playerCenter - reward.sprite.getPosition(); // Tìm hướng
-            reward.velocity = normalize(direction) * HOMING_SPEED; // Tính vận tốc bay
-            reward.sprite.move(reward.velocity * deltaTime * 60.f); // Di chuyển
+        if (reward.homing) {
+            sf::Vector2f direction = playerCenter - reward.sprite.getPosition();
+            reward.velocity = normalize(direction) * HOMING_SPEED;
+            reward.sprite.move(reward.velocity * deltaTime * 60.f);
         }
     }
 }
 
-// Kiểm tra tất cả va chạm của Player với Item
+// --- HÀM XỬ LÝ VA CHẠM VÀ TÍNH ĐIỂM ---
 void Item::checkCollisions(Player& player)
 {
-    sf::FloatRect playerBounds = player.getGlobalBounds(); // Lấy hitbox của player
+    sf::FloatRect playerBounds = player.getGlobalBounds();
 
-    // --- COLLISION (Player vs Coins) --- (Từ updatePlaying())
-    // (Dùng vòng lặp iterator (với .begin(), .end(), .erase())
-    //  để có thể xóa item ngay trong lúc lặp)
+    // 1. VA CHẠM COINS
     for (auto coinIter = mCoins.begin(); coinIter != mCoins.end(); ) {
         if (playerBounds.intersects(coinIter->getGlobalBounds())) {
-            coinIter = mCoins.erase(coinIter); // Xóa đồng xu
-            player.addCoin(1); // Tác động đến Player (Encapsulation)
-            player.addScore(10);
-            mCoinSound.play(); // Phát âm thanh xu (đã giảm)
+            coinIter = mCoins.erase(coinIter);
+            player.addCoin(1); player.addScore(10); mCoinSound.play();
         }
-        else {
-            ++coinIter; // Chỉ tăng iterator nếu không xóa
-        }
+        else { ++coinIter; }
     }
 
-    // --- COLLISION (Player vs Mystery Boxes) --- (Từ updatePlaying())
+    // 2. VA CHẠM BOXES (Đụng hộp: +10 điểm)
     for (auto boxIter = mMysteryBoxes.begin(); boxIter != mMysteryBoxes.end(); ) {
         if (playerBounds.intersects(boxIter->sprite.getGlobalBounds())) {
-            player.addScore(20); // Cộng điểm khi đụng hộp
-            sf::FloatRect boxBounds = boxIter->sprite.getGlobalBounds();
-            // Vị trí quà bay ra (từ tâm hộp)
-            sf::Vector2f rewardPos = { boxBounds.left + boxBounds.width / 2.f, boxBounds.top + boxBounds.height / 2.f };
+            player.addScore(10); // ĐỤNG HỘP: CỘNG 10 ĐIỂM
 
-            // Logic sinh quà từ hộp
+            sf::Vector2f rewardPos = { boxIter->sprite.getPosition().x, boxIter->sprite.getPosition().y };
+            // Logic tạo reward (Coin, Nấm, Hoa)
             if (boxIter->reward == COIN) {
-                // ... (Logic sinh 1-3 xu) ...
-                int numCoinsToSpawn = 1;
-                int coinAmountRand = rand() % 100;
-                if (coinAmountRand < 10) numCoinsToSpawn = 3;
-                else if (coinAmountRand < 30) numCoinsToSpawn = 2;
+                int numCoinsToSpawn = 1; int coinAmountRand = rand() % 100;
+                if (coinAmountRand < 10) numCoinsToSpawn = 3; else if (coinAmountRand < 30) numCoinsToSpawn = 2;
                 else numCoinsToSpawn = 1;
                 for (int c = 0; c < numCoinsToSpawn; ++c) {
-                    Reward newCoinReward; // Tạo 1 Reward mới
-                    newCoinReward.homing = true;
-                    newCoinReward.type = COIN;
-                    newCoinReward.sprite.setTexture(mCoinTexture);
-                    newCoinReward.sprite.setScale(COIN_SCALE, COIN_SCALE);
-                    sf::FloatRect coinBounds = newCoinReward.sprite.getLocalBounds();
-                    newCoinReward.sprite.setOrigin(coinBounds.width / 2.f, coinBounds.height / 2.f);
+                    Reward newCoinReward; newCoinReward.homing = true; newCoinReward.type = COIN; newCoinReward.sprite.setTexture(mCoinTexture); newCoinReward.sprite.setScale(COIN_SCALE, COIN_SCALE);
+                    sf::FloatRect coinBounds = newCoinReward.sprite.getLocalBounds(); newCoinReward.sprite.setOrigin(coinBounds.width / 2.f, coinBounds.height / 2.f);
                     newCoinReward.sprite.setPosition(rewardPos.x + (rand() % 10 - 5), rewardPos.y + (rand() % 10 - 5));
-                    mActiveRewards.push_back(newCoinReward); // Thêm vào danh sách item đang bay
+                    mActiveRewards.push_back(newCoinReward);
                 }
             }
             else if (boxIter->reward == MUSHROOM) {
-                // (Tạo Reward nấm và thêm vào mActiveRewards)
                 Reward newReward; newReward.homing = true; newReward.type = MUSHROOM; newReward.sprite.setTexture(mMushroomTexture); newReward.sprite.setScale(MUSHROOM_SCALE, MUSHROOM_SCALE);
                 sf::FloatRect rewardBounds = newReward.sprite.getLocalBounds(); newReward.sprite.setOrigin(rewardBounds.width / 2.f, rewardBounds.height / 2.f); newReward.sprite.setPosition(rewardPos);
                 mActiveRewards.push_back(newReward);
             }
-            else { // FIRE_FLOWER
-                // (Tạo Reward hoa và thêm vào mActiveRewards)
+            else {
                 Reward newReward; newReward.homing = true; newReward.type = FIRE_FLOWER; newReward.sprite.setTexture(mFireFlowerTexture); newReward.sprite.setScale(FIRE_FLOWER_SCALE, FIRE_FLOWER_SCALE);
                 sf::FloatRect rewardBounds = newReward.sprite.getLocalBounds(); newReward.sprite.setOrigin(rewardBounds.width / 2.f, rewardBounds.height / 2.f); newReward.sprite.setPosition(rewardPos);
                 mActiveRewards.push_back(newReward);
             }
-            boxIter = mMysteryBoxes.erase(boxIter); // Xóa hộp
+            boxIter = mMysteryBoxes.erase(boxIter);
         }
-        else {
-            ++boxIter;
-        }
+        else { ++boxIter; }
     }
 
-    // --- COLLISION (Player vs Active Rewards) --- (Từ updatePlaying())
-    // (Va chạm với các item đang bay)
+    // 3. VA CHẠM ACTIVE REWARDS (Nấm: +30, Hoa Lửa bay ra từ hộp: -20)
     for (auto rewardIter = mActiveRewards.begin(); rewardIter != mActiveRewards.end(); ) {
         if (playerBounds.intersects(rewardIter->sprite.getGlobalBounds())) {
-            // Kiểm tra loại quà và tác động đến Player
-            if (rewardIter->type == COIN) {
-                player.addCoin(1);
-                player.addScore(10);
-                mCoinSound.play(); // Phát âm thanh xu (đã giảm)
-            }
+            if (rewardIter->type == COIN) { player.addCoin(1); player.addScore(10); mCoinSound.play(); }
             else if (rewardIter->type == MUSHROOM) {
                 player.addLife();
-                player.addScore(10);
-                player.collectPowerup(); // Hiệu ứng nháy xanh
-                mPowerupSound.play(); // Phát âm thanh nấm (đã giảm)
+                player.addScore(30); // ĂN NẤM: CỘNG 30 ĐIỂM
+                player.collectPowerup();
+                mPowerupSound.play();
             }
-            else { // FIRE_FLOWER
-                player.takeDamage(); // Mất máu
-                mDamageSound.play(); // Phát âm thanh damage (giữ nguyên)
-                if (player.isDead()) break; // Nếu chết thì dừng kiểm tra
+            else { // HOA LỬA BAY RA TỪ HỘP
+                player.addScore(-20); // TRỪ 20 ĐIỂM (ĐÃ CẬP NHẬT)
+                player.takeDamage(); // Mất 1 mạng + I-frames
+                mDamageSound.play();
+                if (player.isDead()) break;
             }
-            rewardIter = mActiveRewards.erase(rewardIter); // Xóa quà
+            rewardIter = mActiveRewards.erase(rewardIter);
         }
-        else {
-            ++rewardIter;
-        }
+        else { ++rewardIter; }
     }
 
-    if (player.isDead()) return; // Thoát sớm nếu player đã chết
-
-    // --- COLLISION (Player vs Ground Fire Flowers) --- (Từ updatePlaying())
+    // 4. VA CHẠM GROUND FLOWERS (Hoa Lửa dưới đất: -20)
+    if (player.isDead()) return;
     for (auto flowerIter = mGroundFireFlowers.begin(); flowerIter != mGroundFireFlowers.end(); ) {
         if (playerBounds.intersects(flowerIter->getGlobalBounds())) {
-            player.takeDamage(); // Mất máu
-            mDamageSound.play(); // Phát âm thanh damage (giữ nguyên)
-            if (player.isDead()) break; // Dừng nếu chết
-            flowerIter = mGroundFireFlowers.erase(flowerIter); // Xóa hoa
+            player.addScore(-20); // BỊ ĐÁNH THƯỜNG (HOA LỬA DƯỚI ĐẤT): TRỪ 20 ĐIỂM (ĐÃ CẬP NHẬT)
+            player.takeDamage(); // Mất 1 mạng + I-frames
+            mDamageSound.play();
+            if (player.isDead()) break;
+            flowerIter = mGroundFireFlowers.erase(flowerIter);
         }
-        else {
-            ++flowerIter;
-        }
+        else { ++flowerIter; }
     }
 }
 
-// --- Các hàm sinh item (lấy từ resetGame() cũ) ---
-// (Đây là logic sinh ngẫu nhiên, được giữ nguyên)
+// --- HÀM HELPER (RANDOM ITEM SPAWN) ---
 
-void Item::spawnCoins(const std::vector<sf::RectangleShape>& platforms)
+void Item::spawnCoins(int count, const std::vector<sf::RectangleShape>& platforms, sf::FloatRect flagBounds)
 {
-    int maxRetries = 100; // Số lần thử tối đa để tìm vị trí
-    const float MIN_COIN_DISTANCE = 100.f; // Khoảng cách tối thiểu giữa các xu
-    auto getSafeRandomX = [&]() -> float { // Hàm lambda (hàm nhỏ) để lấy X ngẫu nhiên
-        return static_cast<float>(rand() % static_cast<int>(GAME_WIDTH - 500) + 400);
+    int maxRetries = 100;
+    const float MIN_COIN_DISTANCE = 100.f;
+
+    // Item bắt đầu spawn từ X=200 (Vùng an toàn)
+    auto getSafeRandomX = [&]() -> float {
+        return static_cast<float>(rand() % static_cast<int>(GAME_WIDTH - 400) + 200);
+        };
+    // Item rải đều từ Y=100 (trên cao) đến Y=650 (gần mặt đất)
+    auto getSafeRandomY = [&]() -> float {
+        return static_cast<float>(rand() % 551 + 100);
         };
 
-    const int numberOfCoins = 25;
-    int coinsPlaced = 0;
-    for (int i = 0; i < numberOfCoins && mCoinTexture.getSize().x > 0; ++i) {
+    for (int i = 0; i < count && mCoinTexture.getSize().x > 0; ++i) {
         int retryCount = 0; bool placed = false;
         while (!placed && retryCount < maxRetries) {
             retryCount++;
-            sf::Sprite newCoin(mCoinTexture);
-            newCoin.setScale(COIN_SCALE, COIN_SCALE);
-            float coinX = getSafeRandomX();
-            float coinY = static_cast<float>(rand() % static_cast<int>(WINDOW_HEIGHT - 300) + 100);
-            newCoin.setPosition(coinX, coinY);
-            bool overlaps = false; // Kiểm tra xem có bị trùng không
-            for (const auto& p : platforms) { if (newCoin.getGlobalBounds().intersects(p.getGlobalBounds())) { overlaps = true; break; } } // Trùng platform
-            if (overlaps) continue; // Thử lại
-            for (const auto& c : mCoins) { // Trùng xu khác
-                sf::Vector2f diff = newCoin.getPosition() - c.getPosition();
-                float distance = std::sqrt(diff.x * diff.x + diff.y * diff.y);
+            sf::Sprite newCoin(mCoinTexture); newCoin.setScale(COIN_SCALE, COIN_SCALE);
+            float coinX = getSafeRandomX(); float coinY = getSafeRandomY(); newCoin.setPosition(coinX, coinY);
+
+            bool overlaps = false;
+            // 1. Kiểm tra va chạm với Platform
+            for (const auto& p : platforms) { if (newCoin.getGlobalBounds().intersects(p.getGlobalBounds())) { overlaps = true; break; } }
+            if (overlaps) continue;
+            // 2. Kiểm tra va chạm với Flag
+            if (newCoin.getGlobalBounds().intersects(flagBounds)) { overlaps = true; continue; }
+            // 3. Kiểm tra va chạm với Coin khác
+            for (const auto& c : mCoins) {
+                sf::Vector2f diff = newCoin.getPosition() - c.getPosition(); float distance = std::sqrt(diff.x * diff.x + diff.y * diff.y);
                 if (distance < MIN_COIN_DISTANCE) { overlaps = true; break; }
             }
-            if (!overlaps) { mCoins.push_back(newCoin); placed = true; coinsPlaced++; } // Vị trí OK, thêm vào
+            if (!overlaps) { mCoins.push_back(newCoin); placed = true; }
         }
     }
 }
 
-void Item::spawnBoxes(const std::vector<sf::RectangleShape>& platforms)
+void Item::spawnBoxes(int count, const std::vector<sf::RectangleShape>& platforms, sf::FloatRect flagBounds)
 {
     int maxRetries = 100;
     const float MIN_BOX_DISTANCE = 400.f;
+
+    // Item bắt đầu spawn từ X=200 (Vùng an toàn)
     auto getSafeRandomX = [&]() -> float {
-        return static_cast<float>(rand() % static_cast<int>(GAME_WIDTH - 500) + 400);
+        return static_cast<float>(rand() % static_cast<int>(GAME_WIDTH - 400) + 200);
+        };
+    auto getSafeRandomY = [&]() -> float {
+        return static_cast<float>(rand() % 551 + 100);
         };
 
-    const int numberOfBoxes = 7;
-    int boxesPlaced = 0;
-    for (int i = 0; i < numberOfBoxes && mMysteryBoxTexture.getSize().x > 0; ++i) {
+    for (int i = 0; i < count && mMysteryBoxTexture.getSize().x > 0; ++i) {
         int retryCount = 0; bool placed = false;
         while (!placed && retryCount < maxRetries) {
             retryCount++;
-            MysteryBox newBox; // Tạo hộp mới
-            newBox.sprite.setTexture(mMysteryBoxTexture);
-            newBox.sprite.setScale(BOX_SCALE, BOX_SCALE);
-            float boxX = getSafeRandomX();
-            float boxY = static_cast<float>(rand() % 201 + 200);
-            newBox.sprite.setPosition(boxX, boxY);
-
-            // Quyết định quà bên trong (tỷ lệ 60% xu, 25% nấm, 15% hoa)
-            int rewardRand = rand() % 100;
-            if (rewardRand < 60) newBox.reward = COIN;
-            else if (rewardRand < 85) newBox.reward = MUSHROOM;
-            else newBox.reward = FIRE_FLOWER;
+            MysteryBox newBox; newBox.sprite.setTexture(mMysteryBoxTexture); newBox.sprite.setScale(BOX_SCALE, BOX_SCALE);
+            float boxX = getSafeRandomX(); float boxY = getSafeRandomY(); newBox.sprite.setPosition(boxX, boxY);
+            int rewardRand = rand() % 100; // Logic random loại phần thưởng
+            if (rewardRand < 60) newBox.reward = COIN; else if (rewardRand < 85) newBox.reward = MUSHROOM; else newBox.reward = FIRE_FLOWER;
 
             bool overlaps = false;
+            // 1. Kiểm tra va chạm với Platform
             for (const auto& p : platforms) { if (newBox.sprite.getGlobalBounds().intersects(p.getGlobalBounds())) { overlaps = true; break; } }
             if (overlaps) continue;
-
-            for (const auto& box : mMysteryBoxes) { // Kiểm tra trùng hộp khác
+            // 2. Kiểm tra va chạm với Flag
+            if (newBox.sprite.getGlobalBounds().intersects(flagBounds)) { overlaps = true; continue; }
+            // 3. Kiểm tra va chạm với Box khác
+            for (const auto& box : mMysteryBoxes) {
                 sf::Vector2f diff = newBox.sprite.getPosition() - box.sprite.getPosition();
                 float distance = std::sqrt(diff.x * diff.x + diff.y * diff.y);
-                if (distance < MIN_BOX_DISTANCE) {
-                    overlaps = true;
-                    break;
-                }
+                if (distance < MIN_BOX_DISTANCE) { overlaps = true; break; }
             }
-            if (!overlaps) { mMysteryBoxes.push_back(newBox); placed = true; boxesPlaced++; }
+            if (!overlaps) { mMysteryBoxes.push_back(newBox); placed = true; }
         }
     }
 }
 
-void Item::spawnFireFlowers(const std::vector<sf::RectangleShape>& platforms, const sf::RectangleShape& ground)
+void Item::spawnFireFlowers(int count, const std::vector<sf::RectangleShape>& platforms, const sf::RectangleShape& ground, sf::FloatRect flagBounds)
 {
     int maxRetries = 100;
     const float MIN_FIRE_FLOWER_DISTANCE = 200.f;
+    const float SAFE_ZONE_X = 200.f; // Vùng an toàn 200px (tránh spawn kill)
+
     auto getSafeRandomX = [&]() -> float {
-        return static_cast<float>(rand() % static_cast<int>(GAME_WIDTH - 500) + 400);
+        // Bắt đầu từ 200. Phạm vi = GAME_WIDTH - 300
+        return static_cast<float>(rand() % static_cast<int>(GAME_WIDTH - SAFE_ZONE_X - 100) + SAFE_ZONE_X);
         };
 
-    // Sinh 7 hoa lửa trên platform cao
-    const int numberOfPlatformFlowers = 7;
-    int platformFlowersPlaced = 0;
+    const int numberOfPlatformFlowers = count / 2;
+    const int numberOfGroundFlowers = count - numberOfPlatformFlowers;
+
+    // Logic spawn trên Platform
     for (int i = 0; i < numberOfPlatformFlowers && mFireFlowerTexture.getSize().x > 0 && platforms.size() > 1; ++i) {
         int retryCount = 0; bool placed = false;
         while (!placed && retryCount < maxRetries) {
             retryCount++;
-            int platformIndex = rand() % (platforms.size() - 1) + 1; // Chọn platform ngẫu nhiên (trừ mặt đất)
+            int platformIndex = rand() % (platforms.size() - 1) + 1;
             const auto& chosenPlatform = platforms[platformIndex];
-            if (chosenPlatform.getPosition().x < 200) { continue; } // Tránh sinh quá gần điểm bắt đầu
-            sf::Sprite newFlower(mFireFlowerTexture);
-            newFlower.setScale(FIRE_FLOWER_SCALE, FIRE_FLOWER_SCALE);
+
+            // Kiểm tra vùng an toàn cho platform
+            if (chosenPlatform.getPosition().x < SAFE_ZONE_X) { continue; }
+
+            sf::Sprite newFlower(mFireFlowerTexture); newFlower.setScale(FIRE_FLOWER_SCALE, FIRE_FLOWER_SCALE);
             sf::FloatRect flowerBounds = newFlower.getLocalBounds();
-            // Đặt hoa ở giữa platform
             float flowerX = chosenPlatform.getPosition().x + (chosenPlatform.getSize().x / 2.f) - (flowerBounds.width * FIRE_FLOWER_SCALE / 2.f);
             float flowerY = chosenPlatform.getPosition().y - (flowerBounds.height * FIRE_FLOWER_SCALE) + 5.f;
             newFlower.setPosition(flowerX, flowerY);
+
             bool overlaps = false;
-            for (const auto& f : mGroundFireFlowers) { // Kiểm tra trùng hoa khác
-                sf::Vector2f diff = newFlower.getPosition() - f.getPosition();
-                float distance = std::sqrt(diff.x * diff.x + diff.y * diff.y);
-                if (newFlower.getGlobalBounds().intersects(f.getGlobalBounds()) || distance < MIN_FIRE_FLOWER_DISTANCE) {
-                    overlaps = true; break;
-                }
+            // 1. Kiểm tra va chạm với Flag
+            if (newFlower.getGlobalBounds().intersects(flagBounds)) { overlaps = true; continue; }
+            // 2. Kiểm tra va chạm với hoa khác
+            for (const auto& f : mGroundFireFlowers) {
+                sf::Vector2f diff = newFlower.getPosition() - f.getPosition(); float distance = std::sqrt(diff.x * diff.x + diff.y * diff.y);
+                if (newFlower.getGlobalBounds().intersects(f.getGlobalBounds()) || distance < MIN_FIRE_FLOWER_DISTANCE) { overlaps = true; break; }
             }
-            if (!overlaps) { mGroundFireFlowers.push_back(newFlower); placed = true; platformFlowersPlaced++; }
+            if (!overlaps) { mGroundFireFlowers.push_back(newFlower); placed = true; }
         }
     }
 
-    // Sinh 8 hoa lửa dưới đất
-    const int numberOfGroundFlowers = 8;
-    int groundFlowersPlaced = 0;
+    // Logic spawn trên Ground (Mặt đất)
     float groundTopY = ground.getPosition().y;
     for (int i = 0; i < numberOfGroundFlowers && mFireFlowerTexture.getSize().x > 0; ++i) {
         int retryCount = 0; bool placed = false;
         while (!placed && retryCount < maxRetries) {
             retryCount++;
-            sf::Sprite newFlower(mFireFlowerTexture);
-            newFlower.setScale(FIRE_FLOWER_SCALE, FIRE_FLOWER_SCALE);
+            sf::Sprite newFlower(mFireFlowerTexture); newFlower.setScale(FIRE_FLOWER_SCALE, FIRE_FLOWER_SCALE);
             sf::FloatRect flowerBounds = newFlower.getLocalBounds();
-            float flowerX = getSafeRandomX(); // Vị trí X ngẫu nhiên
-            float flowerY = groundTopY - (flowerBounds.height * FIRE_FLOWER_SCALE) + 5.f; // Đặt trên mặt đất
+
+            float flowerX = getSafeRandomX();
+
+            float flowerY = groundTopY - (flowerBounds.height * FIRE_FLOWER_SCALE) + 5.f;
             newFlower.setPosition(flowerX, flowerY);
+
             bool overlaps = false;
-            for (const auto& f : mGroundFireFlowers) { // Kiểm tra trùng hoa khác
-                sf::Vector2f diff = newFlower.getPosition() - f.getPosition();
-                float distance = std::sqrt(diff.x * diff.x + diff.y * diff.y);
-                if (newFlower.getGlobalBounds().intersects(f.getGlobalBounds()) || distance < MIN_FIRE_FLOWER_DISTANCE) {
-                    overlaps = true; break;
-                }
+            // 1. Kiểm tra va chạm với Flag
+            if (newFlower.getGlobalBounds().intersects(flagBounds)) { overlaps = true; continue; }
+            // 2. Kiểm tra va chạm với hoa khác
+            for (const auto& f : mGroundFireFlowers) {
+                sf::Vector2f diff = newFlower.getPosition() - f.getPosition(); float distance = std::sqrt(diff.x * diff.x + diff.y * diff.y);
+                if (newFlower.getGlobalBounds().intersects(f.getGlobalBounds()) || distance < MIN_FIRE_FLOWER_DISTANCE) { overlaps = true; break; }
             }
-            if (!overlaps) { mGroundFireFlowers.push_back(newFlower); placed = true; groundFlowersPlaced++; }
+            if (!overlaps) { mGroundFireFlowers.push_back(newFlower); placed = true; }
         }
     }
 }

@@ -4,52 +4,48 @@
 #include "Item.h"
 #include "Map.h"
 #include "UI.h"
+#include "Enemy.h" // Thêm Enemy
 
-// Class Game là "nhạc trưởng" quản lý tất cả các đối tượng khác
-// và chứa vòng lặp game chính
-// (Mô hình "Composition": Game "có một" Player, "có một" Item,...)
 class Game
 {
 public:
-    Game(); // Hàm khởi tạo (Constructor): Tạo cửa sổ, tải tất cả tài nguyên
-    void run(); // Bắt đầu vòng lặp game
-
+    Game();
+    void run();
 private:
-    // Ba hàm chính của vòng lặp game
-    void processEvents(); // Xử lý input (đóng cửa sổ, nhấn phím thay đổi state)
-    void update(float deltaTime); // Cập nhật logic (quản lý state, gọi update của đối tượng khác)
-    void render(); // Vẽ mọi thứ (quản lý camera, gọi render của đối tượng khác)
-
-    // Các hàm helper (hỗ trợ)
-    void updatePlaying(float deltaTime); // Logic cập nhật cụ thể khi đang ở state PLAYING
-    void resetGame(); // Reset tất cả các đối tượng (Player, Map, Item, UI)
-    void updateCamera(); // Cập nhật camera đi theo Player
-
-    // Hàm xử lý file điểm cao
+    void processEvents();
+    void update(float deltaTime);
+    void render();
+    void updatePlaying(float deltaTime);
+    void resetGame(bool resetScoreAndCoins);
+    void updateCamera();
     void loadHighScores();
     void saveHighScores();
 
-    // --- Biến thành viên ---
-    sf::RenderWindow mWindow; // Cửa sổ game
-    GameState mCurrentState; // Trạng thái game hiện tại (MENU, PLAYING,...)
+    // Logic Quản lý Kẻ Thù
+    void spawnEnemies();
+    void updateEnemies(float deltaTime);
 
-    // --- ÂM THANH GAME ---
-    sf::Music mBackgroundMusic; // Dùng Music cho file dài (nhạc nền), stream từ file
-    sf::SoundBuffer mGameOverBuffer; // Dùng Sound cho file ngắn (âm thanh)
+    sf::RenderWindow mWindow;
+    GameState mCurrentState;
+    int mCurrentLevel = 1;
+    const int MAX_LEVELS = 2;
+    sf::Music mBackgroundMusic;
+    sf::SoundBuffer mGameOverBuffer;
     sf::Sound mGameOverSound;
-
-    // --- Đối tượng game ---
-    // (Game "sở hữu" các đối tượng này)
     Player mPlayer;
     Item mItem;
     Map mMap;
     UI mUI;
+    sf::View mCamera;
+    sf::View mCloudView;
+    float mStartingTimer;
+    float mGameOverTimer;
+    float mTitleTimer;
+    float mVictoryTimer; // Timer màn hình thắng
+    std::vector<int> mHighScores;
 
-    // --- Views & Timers ---
-    sf::View mCamera; // Camera chính (di chuyển theo Player)
-    sf::View mCloudView; // Camera riêng cho mây (để tạo hiệu ứng parallax)
-    float mStartingTimer; // Đếm ngược cho state STARTING
-    float mGameOverTimer; // Đếm ngược cho state GAME_OVER
-    float mTitleTimer;    // Đếm ngược cho state TITLE_SCREEN
-    std::vector<int> mHighScores; // Danh sách điểm cao
+    // Các biến Quản lý Game
+    std::vector<Enemy> mEnemies; // Vector lưu trữ Enemy
+    sf::Texture mGoombaTexture; // Texture dùng chung
+    int mVolume; // Biến lưu trữ âm lượng hiện tại
 };

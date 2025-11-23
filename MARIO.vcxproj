@@ -136,11 +136,14 @@
     <ClCompile Include="Map.cpp" />
     <ClCompile Include="MARIO.cpp" />
     <ClCompile Include="Player.cpp" />
+    <ClCompile Include="Enemy.cpp" />
     <ClCompile Include="UI.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Game.h" />
     <ClInclude Include="Defines.h" />
+    <ClInclude Include="Enemy.h" />
+    <ClInclude Include="Entity.h" />
     <ClInclude Include="Item.h" />
     <ClInclude Include="Map.h" />
     <ClInclude Include="Player.h" />
